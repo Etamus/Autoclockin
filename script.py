@@ -61,16 +61,20 @@ def registrar_ponto():
     print(f"Atraso concluído! Iniciando o login agora às: {hora_do_ponto.strftime('%H:%M:%S')}")
 
     # =========================================================================
-    # EXECUÇÃO DO PLAYWRIGHT (Seu código original)
+    # EXECUÇÃO DO PLAYWRIGHT
     # =========================================================================
     usuario = os.getenv("SITE_USUARIO")
     senha = os.getenv("SITE_SENHA")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
+        
+        # ALTERAÇÃO APLICADA: Configuração de tela Full HD e disfarce de navegador PC
         context = browser.new_context(
             geolocation={"latitude": -23.7245354, "longitude": -46.5618011},
-            permissions=["geolocation"]
+            permissions=["geolocation"],
+            viewport={"width": 1920, "height": 1080},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
         page = context.new_page()
 
@@ -96,7 +100,11 @@ def registrar_ponto():
             print("Ponto registrado com sucesso dentro da janela permitida!")
 
         except Exception as e:
+            # ALTERAÇÃO APLICADA: Tirar foto do erro e forçar a falha no GitHub
             print(f"Erro ao tentar interagir com a página: {e}")
+            page.screenshot(path="erro_tela.png")
+            raise e # Garante que o GitHub fique vermelho para você ser avisado
+            
         finally:
             context.close()
             browser.close()
