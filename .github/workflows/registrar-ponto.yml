@@ -1,0 +1,119 @@
+name: Registrar Ponto
+
+# =============================================================================
+# Janelas reais (horário de Brasília):
+#   Manhã: 07:00 – 08:10  (= 10:00 – 11:10 UTC)
+#   Tarde: 17:30 – 18:30  (= 20:30 – 21:30 UTC)
+#
+# O cron do GitHub Actions sofre atrasos frequentes (5 a 30+ min, às vezes
+# mais). Por isso disparamos o workflow ~70 minutos ANTES do início da janela.
+# O script Python então dorme até um momento aleatório DENTRO da janela e só
+# então marca o ponto, com várias travas de segurança.
+#
+# Se mesmo com essa folga o GitHub atrasar a ponto de o script começar depois
+# da janela, ele FALHARÁ ALTO (exit 1 → workflow vermelho → issue criada),
+# em vez de marcar o ponto fora do horário.
+# =============================================================================
+
+on:
+  schedule:
+    # 05:50 UTC = 02:50 BRT — turno da manhã (janela 07:00-08:10 BRT).
+    # Folga gigante porque o cron do Actions costuma atrasar de madrugada também.
+    - cron: '50 5 * * 1-5'
+    # 15:50 UTC = 12:50 BRT — turno da tarde (janela 17:30-18:30 BRT).
+    - cron: '50 15 * * 1-5'
+  workflow_dispatch: {}  # permite disparo manual para testes
+
+# Não cancela execuções em andamento (quero que termine de marcar o ponto)
+concurrency:
+  group: registrar-ponto-${{ github.event.schedule || 'manual' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write  # para criar issue automática em caso de falha
+
+jobs:
+  registrar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6h — folga absurda para garantir que nunca dê timeout antes da janela
+
+    env:
+      TZ: America/Sao_Paulo
+      SITE_USUARIO: ${{ secrets.SITE_USUARIO }}
+      SITE_SENHA: ${{ secrets.SITE_SENHA }}
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Validar segredos
+        run: |
+          if [ -z "${SITE_USUARIO:-}" ] || [ -z "${SITE_SENHA:-}" ]; then
+            echo "::error::Segredos SITE_USUARIO/SITE_SENHA não configurados em Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          echo "Segredos OK."
+
+      - name: Instalar dependências Python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Cache do navegador Playwright
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-v1
+
+      - name: Instalar Chromium do Playwright
+        run: python -m playwright install --with-deps chromium
+
+      - name: Executar Autoclockin
+        id: run
+        run: python script.py
+
+      - name: Subir artefatos (screenshots e trace)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: artefatos-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            shot_*.png
+            trace.zip
+            erro_tela.png
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Abrir issue se falhar
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const url = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const trigger = context.payload.schedule || 'manual';
+            const title = `[Falha] Registrar Ponto — ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`;
+            const body = [
+              `**Trigger:** \`${trigger}\``,
+              `**Run:** ${url}`,
+              ``,
+              `⚠️ **AÇÃO NECESSÁRIA:** Verifique manualmente se o ponto precisa ser registrado AGORA.`,
+              ``,
+              `Baixe os artefatos do run para ver os screenshots (\`shot_*.png\`) e o trace (\`trace.zip\`).`,
+              `Para abrir o trace: \`npx playwright show-trace trace.zip\``,
+            ].join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['ponto-falhou'],
+            });

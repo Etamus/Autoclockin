@@ -1,0 +1,17 @@
+# Credenciais
+.env
+
+# Lockfiles do script (1 por turno por dia)
+.lock_*
+
+# Artefatos de debug do Playwright
+shot_*.png
+erro_tela.png
+trace.zip
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/

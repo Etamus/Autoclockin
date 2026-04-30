@@ -67,7 +67,7 @@ Em **Settings > Actions > General**, verifique se a opção **Workflow permissio
 O arquivo de workflow está configurado para disparar em dois momentos (Horário de Brasília):
 
 - Entre **07:00 e 08:00** (gatilho inicial às 10:00 UTC)  
-- Entre **17:00 e 18:00** (gatilho inicial às 20:00 UTC)  
+- Entre **17:30 e 18:30** (gatilho inicial às 20:00 UTC)  
 
 O atraso aleatório é gerado internamente pelo script Python para garantir a variabilidade dentro desses intervalos.
 
